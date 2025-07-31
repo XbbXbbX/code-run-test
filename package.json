@@ -5,18 +5,21 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "run-p type-check \"build-only {@}\" --",
+    "build": "npm run copy-thebe-assets && run-p type-check \"build-only {@}\" --",
     "preview": "vite preview",
     "test:unit": "vitest",
     "test:e2e": "playwright test",
     "build-only": "vite build",
     "type-check": "vue-tsc --build",
     "lint": "eslint . --fix",
-    "format": "prettier --write src/"
+    "format": "prettier --write src/",
+    "copy-thebe-assets": "copy-thebe-assets public/thebe"
   },
   "dependencies": {
     "pinia": "^3.0.3",
+    "thebe": "^0.9.3",
     "thebe-core": "^0.5.0",
+    "uuid": "^11.1.0",
     "vue": "^3.5.17",
     "vue-router": "^4.5.1"
   },

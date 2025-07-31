@@ -45,7 +45,7 @@ const props = defineProps({
 })
 
 const code = ref(props.initialCode)
-const cellId = ref(`cell-${uuidv4()}`)// 生成唯一 cell ID
+const cellId = ref(`cell-${uuidv4()}`)
 const isExecuting = ref(false)
 const outputs = ref<any[]>([])
 
@@ -111,12 +111,12 @@ onMounted(() => {
   background-color: #f0f8ff;
 }
 
-.code-actions {
+/* .code-actions {
   padding: 0.5rem;
-  background-color: #f5f5f5;
+  background-color: transparent;
   display: flex;
   align-items: center;
-}
+} */
 
 .code-actions button {
   padding: 0.25rem 0.75rem;
