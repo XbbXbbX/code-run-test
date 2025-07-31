@@ -16,6 +16,16 @@ const state = reactive({
   cellExecutions: new Map<string, { status: string; output: any[] }>(),
   // 新增：更细粒度的连接状态
   connectionStatus: 'idle' as 'idle' | 'connecting' | 'connected' | 'error' | 'disconnected',
+  // 新增：输入相关状态
+  inputRequests: new Map<
+    string,
+    {
+      cellId: string
+      prompt: string
+      password: boolean
+      resolve: (value: string) => void
+    }
+  >(),
 })
 
 // 存储全局实例
@@ -26,6 +36,40 @@ let renderMimeRegistry: any = null
 let config: Config | null = null
 // 优化后的代码块管理
 const notebookCells = new Map<string, any>() // 缓存所有 cells
+// 跟踪当前执行的cell
+let currentExecutingCell: string | null = null
+// 获取当前执行的cell ID
+function getCurrentExecutingCell(): string {
+  return currentExecutingCell || 'unknown-cell'
+}
+
+// 新增：处理输入请求
+function handleInputRequest(data: {
+  cellId: string
+  prompt: string
+  password: boolean
+  msgId?: string
+}) {
+  console.log('Handling input request for cell:', data.cellId)
+
+  // 更新cell状态为等待输入
+  const execution = state.cellExecutions.get(data.cellId)
+  if (execution) {
+    execution.status = 'waiting_for_input'
+    state.cellExecutions.set(data.cellId, execution)
+  }
+
+  // 创建Promise来等待用户输入
+  return new Promise<string>((resolve) => {
+    // 存储输入请求信息
+    state.inputRequests.set(data.cellId, {
+      cellId: data.cellId,
+      prompt: data.prompt,
+      password: data.password,
+      resolve,
+    })
+  })
+}
 
 export function useThebe() {
   // 初始化并连接到Binder
@@ -68,13 +112,19 @@ export function useThebe() {
           state.isConnecting = false
         }
       })
-      // 5. 设置错误事件监听器 - 处理连接或执行过程中的错误
+      // 设置错误事件监听器 - 处理连接或执行过程中的错误
       // 运作时机：任何阶段出现错误时触发
       // 作用：捕获并显示错误信息，更新错误状态
       events.on('error' as any, (event: string, data: any) => {
         console.error('Thebe error:', event, data)
         state.error = new Error(data.message || 'Unknown error')
         state.isConnecting = false
+      })
+
+      // 新增：监听输入请求事件
+      events.on('input_request' as any, (data: any) => {
+        console.log('Input request received:', data)
+        handleInputRequest(data)
       })
 
       // 连接到服务器
@@ -103,6 +153,25 @@ export function useThebe() {
       // 运作机制：向 Jupyter 服务器发送创建内核的请求
       thebeSession = await thebeServer.startNewSession(renderMimeRegistry)
 
+      // 新增：为会话添加输入请求监听
+      if (thebeSession && (thebeSession as any).kernel) {
+        const kernel = (thebeSession as any).kernel
+
+        // 监听内核消息
+        kernel.anyMessage.connect((sender: any, args: any) => {
+          const { msg } = args
+          if (msg.header.msg_type === 'input_request') {
+            console.log('Kernel input request:', msg)
+            handleInputRequest({
+              cellId: getCurrentExecutingCell(),
+              prompt: msg.content.prompt || '请输入:',
+              password: msg.content.password || false,
+              msgId: msg.header.msg_id,
+            })
+          }
+        })
+      }
+
       // 9. 更新最终状态 - 标记初始化完成
       state.isReady = true
       state.isConnecting = false
@@ -125,6 +194,9 @@ export function useThebe() {
       console.error('Session is not ready')
       return null
     }
+
+    // 设置当前执行的cell
+    currentExecutingCell = cellId
 
     // 初始化单元格执行状态
     // 2. 初始化执行状态跟踪 - 为当前代码块创建执行记录
@@ -235,7 +307,7 @@ export function useThebe() {
         // 更新全局状态 - 让 Vue 组件可以响应式地获取执行结果
         state.cellExecutions.set(cellId, execution)
       }
-      // 返回执行结果 - 供调用组件使用，格式是
+      // 返回执行结果 - 供调用组件使用
       return { output: cell.outputs || [] }
     } catch (error) {
       console.error('Execution error:', error)
@@ -253,6 +325,73 @@ export function useThebe() {
         state.cellExecutions.set(cellId, execution)
       }
       throw error
+    } finally {
+      // 清理当前执行状态
+      currentExecutingCell = null
+    }
+  }
+
+  // 新增：发送用户输入到内核
+  async function sendInputReply(cellId: string, inputValue: string) {
+    console.log('Sending input reply for cell:', cellId, 'value:', inputValue)
+
+    const inputRequest = state.inputRequests.get(cellId)
+    if (!inputRequest) {
+      console.error('No input request found for cell:', cellId)
+      return
+    }
+
+    try {
+      // 如果有内核连接，发送input_reply消息
+      if (thebeSession && (thebeSession as any).kernel) {
+        const kernel = (thebeSession as any).kernel
+
+        if (typeof kernel.sendInputReply === 'function') {
+          kernel.sendInputReply({ value: inputValue })
+        }
+        // // 构建input_reply消息
+        // const replyMsg = {
+        //   header: {
+        //     msg_id: kernel.createMessageId(),
+        //     msg_type: 'input_reply',
+        //     username: 'user',
+        //     session: kernel.sessionId,
+        //     date: new Date().toISOString(),
+        //     version: '5.3',
+        //   },
+        //   parent_header: {},
+        //   metadata: {},
+        //   content: {
+        //     value: inputValue,
+        //   },
+        // }
+
+        // // 发送消息到内核
+        // kernel.sendInputReply(replyMsg.content)
+      }
+
+      // 清理输入请求状态
+      state.inputRequests.delete(cellId)
+
+      // 恢复执行状态
+      const execution = state.cellExecutions.get(cellId)
+      if (execution) {
+        execution.status = 'running'
+        state.cellExecutions.set(cellId, execution)
+      }
+
+      // 解析Promise
+      inputRequest.resolve(inputValue)
+    } catch (error) {
+      console.error('Error sending input reply:', error)
+
+      // 清理状态
+      state.inputRequests.delete(cellId)
+      const execution = state.cellExecutions.get(cellId)
+      if (execution) {
+        execution.status = 'error'
+        state.cellExecutions.set(cellId, execution)
+      }
     }
   }
 
@@ -324,6 +463,7 @@ export function useThebe() {
     // 可调用方法
     initializeKernel,
     executeCode,
+    sendInputReply,
     disconnect,
     // 渲染输出的辅助方法
     renderOutput(output: IOutput) {
