@@ -45,7 +45,7 @@ const props = defineProps({
 })
 
 const code = ref(props.initialCode)
-const cellId = ref(`cell-${uuidv4()}`)
+const cellId = ref(`cell-${uuidv4()}`)// 生成唯一 cell ID
 const isExecuting = ref(false)
 const outputs = ref<any[]>([])
 

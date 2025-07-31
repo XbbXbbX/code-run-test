@@ -56,31 +56,44 @@ plt.figure(figsize=(8, 4))
 plt.plot(x, y)
 plt.title('Sine Wave')
 plt.grid(True)
-plt.show()`
+plt.show()
+a = 1`
 
-const ipywidgetsExample = `import ipywidgets as widgets
-from IPython.display import display
+// const ipywidgetsExample = `import ipywidgets as widgets
+// from IPython.display import display
 
-slider = widgets.IntSlider(
-    value=10,
-    min=0,
-    max=100,
-    step=1,
-    description='Value:',
-    continuous_update=False
-)
+// slider = widgets.IntSlider(
+//     value=10,
+//     min=0,
+//     max=100,
+//     step=1,
+//     description='Value:',
+//     continuous_update=False
+// )
 
-output = widgets.Output()
+// output = widgets.Output()
 
-def on_value_change(change):
-    with output:
-        output.clear_output()
-        print(f"Slider value: {change['new']}")
+// def on_value_change(change):
+//     with output:
+//         output.clear_output()
+//         print(f"Slider value: {change['new']}")
 
-slider.observe(on_value_change, names='value')
+// slider.observe(on_value_change, names='value')
 
-display(slider)
-display(output)`
+// display(slider)
+// display(output)`
+
+// const ipywidgetsExample = `# 输出第一部分
+// print("欢迎使用简单计算器！")
+// print(f"a = {a}")
+// # 输入
+// num = input("请输入一个数字: ")
+
+// # 输出第二部分（包含输入的结果）
+// print(f"您输入的数字是: {num}")
+// print("计算完成，谢谢使用！")`
+
+const ipywidgetsExample = `print(f"a = {a}")`
 
 // 自动连接内核
 onMounted(() => {
