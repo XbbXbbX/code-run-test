@@ -17,7 +17,7 @@
       <h2>数据可视化示例</h2>
       <ExecutableCode :initial-code="matplotlibExample" />
 
-      <h2>交互式小部件示例</h2>
+      <h2>状态延续小部件示例</h2>
       <ExecutableCode :initial-code="ipywidgetsExample" />
 
       <h2>多步骤交互示例</h2>

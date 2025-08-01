@@ -18,20 +18,18 @@
     </div>
 
     <!-- 新增：输入区域 -->
-    <div v-if="isWaitingForInput" class="input-area">
-      <div class="input-prompt">{{ inputPrompt }}</div>
-      <div class="input-controls">
-        <input
-          ref="inputField"
-          v-model="userInput"
-          :type="inputPassword ? 'password' : 'text'"
-          @keyup.enter="submitInput"
-          class="user-input"
-          placeholder="按回车键提交..."
-        />
-        <button @click="submitInput" class="submit-input">提交</button>
-      </div>
-    </div>
+<div v-if="isWaitingForInput" class="input-area">
+  <input
+    ref="inputField"
+    v-model="userInput"
+    :type="inputPassword ? 'password' : 'text'"
+    @keyup.enter="submitInput"
+    class="user-input"
+    :placeholder="inputPrompt"
+    autocomplete="off"
+    spellcheck="false"
+  />
+</div>
 
     <!-- 输出区域 -->
     <div class="code-output" v-if="outputs.length > 0">
@@ -212,43 +210,27 @@ onMounted(() => {
 
 /* 新增：输入区域样式 */
 .input-area {
-  padding: 0.5rem;
-  background-color: #fffbf0;
-  border-top: 1px solid #eee;
-  border-bottom: 1px solid #eee;
-}
-
-.input-prompt {
-  margin-bottom: 0.5rem;
-  font-weight: bold;
-  color: #333;
-}
-
-.input-controls {
-  display: flex;
-  gap: 0.5rem;
-  align-items: center;
+  padding: 0.5rem 0.5rem 0.5rem 0;
+  background: none;
+  border: none;
 }
 
 .user-input {
-  flex: 1;
-  padding: 0.25rem 0.5rem;
-  border: 1px solid #ddd;
-  border-radius: 3px;
+  width: 100%;
   font-family: monospace;
+  font-size: 1rem;
+  padding: 0.25rem 0.5rem;
+  border: 1px solid #ccc;
+  border-radius: 2px;
+  outline: none;
+  background: #fff;
+  box-sizing: border-box;
+  transition: border-color 0.2s;
 }
 
-.submit-input {
-  padding: 0.25rem 0.75rem;
-  background-color: #2196f3;
-  color: white;
-  border: none;
-  border-radius: 3px;
-  cursor: pointer;
-}
-
-.submit-input:hover {
-  background-color: #1976d2;
+.user-input:focus {
+  border-color: #1976d2;
+  background: #f7faff;
 }
 
 .code-output {
