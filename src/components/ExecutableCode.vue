@@ -18,18 +18,18 @@
     </div>
 
     <!-- 新增：输入区域 -->
-<div v-if="isWaitingForInput" class="input-area">
-  <input
-    ref="inputField"
-    v-model="userInput"
-    :type="inputPassword ? 'password' : 'text'"
-    @keyup.enter="submitInput"
-    class="user-input"
-    :placeholder="inputPrompt"
-    autocomplete="off"
-    spellcheck="false"
-  />
-</div>
+    <div v-if="isWaitingForInput" class="input-area">
+      <input
+        ref="inputField"
+        v-model="userInput"
+        :type="inputPassword ? 'password' : 'text'"
+        @keyup.enter="submitInput"
+        class="user-input"
+        :placeholder="inputPrompt"
+        autocomplete="off"
+        spellcheck="false"
+      />
+    </div>
 
     <!-- 输出区域 -->
     <div class="code-output" v-if="outputs.length > 0">
@@ -148,9 +148,24 @@ watch(isWaitingForInput, async (waiting) => {
 
 // 组件挂载时，确保内核已初始化
 onMounted(() => {
-  if (!state.isReady && !state.isConnecting) {
-    initializeKernel()
-  }
+  // if (!state.isReady && !state.isConnecting) {
+  //   initializeKernel({
+  //     kernelOptions: {
+  //       kernelName: 'python3',
+  //     },
+  //     binderOptions: {
+  //       repo: 'binder-examples/matplotlib-versions',
+  //       ref: 'matplotlib-2.1.2',
+  //       binderUrl: 'https://mybinder.org',
+  //       repoProvider: 'github',
+  //     },
+  //     // serverSettings: {
+  //     //   baseUrl: 'http://106.15.43.196:12346', // Gateway URL
+  //     //   // token: 'your-secret-authentication-token', // Gateway 令牌
+  //     //   // wsUrl: 'ws://your-jupyter-gateway-url:8888', // 可选: 如果 WebSocket URL 不同，可显式定义
+  //     // },
+  //   })
+  // }
 })
 </script>
 

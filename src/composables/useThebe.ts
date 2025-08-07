@@ -1,10 +1,30 @@
 import { reactive, readonly, onUnmounted } from 'vue'
 import * as thebe from 'thebe-core'
 import type { ThebeNotebook } from 'thebe-core'
-import type { ThebeSession } from 'thebe-core'
-import type { ThebeServer } from 'thebe-core'
 import type { Config, CoreOptions } from 'thebe-core'
 import type { IOutput } from '@jupyterlab/nbformat'
+
+import { ThebeServer, ThebeSession } from 'thebe-core'
+import type { IRenderMimeRegistry, KernelOptions } from 'thebe-core'
+
+// ================= 【猴子补丁】 =================
+//
+// 目的：添加api.status方法
+
+// 保存原始方法
+const originalStatus = ThebeServer.status
+
+// 覆盖 status 方法
+ThebeServer.status = function (serverSettings: any) {
+  if (serverSettings.baseUrl?.includes('12346')) {
+    // 直接返回一个模拟的 Response 对象，ok 为 true
+    // 这里要返回一个 Response 类型的对象，thebe-core 只用到了 ok 字段
+    return Promise.resolve(new Response(null, { status: 200, statusText: 'OK' }))
+  }
+  // 否则走原始逻辑
+  return originalStatus.call(this, serverSettings)
+}
+// ================= 【猴子补丁 - 结束】 =================
 
 // 状态管理
 const state = reactive({
@@ -136,13 +156,25 @@ export function useThebe() {
       //   - Binder 根据指定的 GitHub 仓库构建环境
       //   - 启动一个临时的 Jupyter 服务器
       // 产生结果：一个 ThebeServer 对象，代表运行中的 Jupyter 服务器
-      thebeServer = thebe.connectToBinder(config)
-
+      // thebeServer = thebe.connectToBinder(config)
       // 等待服务器准备就绪
       // 7. 等待服务器完全启动 - 这是一个异步过程
       // 运作时机：Binder 构建环境并启动服务器的过程中
       // 作用：确保服务器完全可用后再进行下一步
       // 时间：通常需要几十秒到几分钟，取决于环境复杂度
+      // await thebeServer.ready
+
+      // //新：连接到jupyter
+      thebeServer = new ThebeServer(config)
+
+      // // 【新增】启动到 Jupyter 服务器的连接
+      // // 这会告诉 thebeServer 使用 config 中的 serverSettings 发起连接
+      // // 注意：这里需要根据你的配置决定调用哪个连接函数
+      // // 假设你总是连接到已知的 Jupyter Server
+      thebeServer.connectToJupyterServer()
+
+      // // 【新增】等待服务器完全准备就绪
+      // // 这是至关重要的一步，确保在进行下一步操作前连接已经建立
       await thebeServer.ready
 
       // 创建会话 - 需要传入 rendermime
@@ -454,6 +486,7 @@ export function useThebe() {
 
   // 自动清理
   onUnmounted(() => {
+    console.log('Conposables useThebe is unmounting, disconnecting Thebe session...')
     disconnect()
   })
 

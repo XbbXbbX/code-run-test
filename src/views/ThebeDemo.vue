@@ -27,7 +27,7 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted } from 'vue'
+import { onMounted, onUnmounted } from 'vue'
 import { useThebe } from '../composables/useThebe'
 import ExecutableCode from '../components/ExecutableCode.vue'
 
@@ -35,15 +35,27 @@ const { state, initializeKernel, disconnect } = useThebe()
 
 // 连接到内核
 function connectKernel() {
+  const uniqueSuffix = Date.now().toString(36) + Math.random().toString(36).substring(2)
   initializeKernel({
     kernelOptions: {
       kernelName: 'python3',
+      path: uniqueSuffix,
     },
-    binderOptions: {
-      repo: 'binder-examples/matplotlib-versions',
-      ref: 'matplotlib-2.1.2',
-      binderUrl: 'https://mybinder.org',
-      repoProvider: 'github',
+    // binderOptions: {
+    //111222
+    //   repo: 'binder-examples/matplotlib-versions',
+    //   ref: 'matplotlib-2.1.2',
+    //   binderUrl: 'https://mybinder.org',
+    //   repoProvider: 'github',
+    // },
+    serverSettings: {
+      baseUrl: 'http://106.15.43.196:12346', // Gateway URL
+      token: '112233', // Gateway 令牌
+      appendToken: false,
+      // wsUrl: 'ws://your-jupyter-gateway-url:8888', // 可选: 如果 WebSocket URL 不同，可显式定义
+    },
+    savedSessionOptions: {
+      enabled: false,
     },
   })
 }
@@ -124,6 +136,11 @@ const ipywidgetsExample = `print(f"a = {a}")`
 // 自动连接内核
 onMounted(() => {
   connectKernel()
+})
+
+onUnmounted(() => {
+  console.log('Component is unmounting, disconnecting Thebe session...')
+  disconnect()
 })
 </script>
 
