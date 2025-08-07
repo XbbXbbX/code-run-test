@@ -133,12 +133,29 @@ print(f"结果: {result}")`
 
 const ipywidgetsExample = `print(f"a = {a}")`
 
-// 自动连接内核
+// 这是 beforeunload 的处理函数
+const handleBeforeUnload = (event: any) => {
+  console.log("发生了刷新")
+  // // 阻止默认行为，这会触发浏览器的挽留提示
+  // event.preventDefault()
+  // // 兼容旧版浏览器
+  // event.returnValue = ''
+
+  //在网页刷新、退出关闭时需要清理session
+  disconnect()
+}
+
 onMounted(() => {
+  // 自动连接内核
   connectKernel()
+  // 组件挂载后，给 window 添加事件监听
+  window.addEventListener('beforeunload', handleBeforeUnload);
 })
 
 onUnmounted(() => {
+  // 组件卸载前，移除监听，否则会造成内存泄漏
+  window.removeEventListener('beforeunload', handleBeforeUnload);
+  //不确定
   console.log('Component is unmounting, disconnecting Thebe session...')
   disconnect()
 })
