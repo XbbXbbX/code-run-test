@@ -61,6 +61,10 @@ let thebeSession: ThebeSession | null = null
 let thebeNotebook: ThebeNotebook | null = null
 let renderMimeRegistry: any = null
 let config: Config | null = null
+// 声明事件处理器变量
+let statusHandler: (event: string, data: any) => void
+let errorHandler: (event: string, data: any) => void
+let inputHandler: (data: any) => void
 // 在文件顶部添加配置缓存
 let cachedServerSettings: any = null
 // 跟踪当前的事件系统
@@ -145,31 +149,36 @@ export function useThebe() {
       // 4. 设置状态事件监听器 - 监听服务器和内核的状态变化
       // 运作时机：服务器启动、内核启动、会话创建等各个阶段
       // 作用：实时更新 UI 状态，让用户知道当前连接状态
-      currentEvents.on('status' as any, (event: string, data: any) => {
+      // 创建具名回调函数
+      statusHandler = (event: string, data: any) => {
         console.log('Server status:', event, data)
-        console.log('Current MODULE_ID:', MODULE_ID) // 确认是哪个模块实例触发的
+        console.log('Current MODULE_ID:', MODULE_ID)
         state.kernelStatus = data.status || event
         if (data.status === 'ready' || data.status === 'server-ready') {
           console.log('Setting state.isReady to true from event:', event, data)
-          console.trace() // 打印调用堆栈
           state.isReady = true
           state.isConnecting = false
         }
-      })
+      }
       // 设置错误事件监听器 - 处理连接或执行过程中的错误
       // 运作时机：任何阶段出现错误时触发
       // 作用：捕获并显示错误信息，更新错误状态
-      currentEvents.on('error' as any, (event: string, data: any) => {
+      errorHandler = (event: string, data: any) => {
         console.error('Thebe error:', event, data)
         state.error = new Error(data.message || 'Unknown error')
         state.isConnecting = false
-      })
+      }
 
       // 新增：监听输入请求事件
-      currentEvents.on('input_request' as any, (data: any) => {
+      inputHandler = (data: any) => {
         console.log('Input request received:', data)
         handleInputRequest(data)
-      })
+      }
+
+      // 注册监听器
+      currentEvents.on('status', statusHandler)
+      currentEvents.on('error', errorHandler)
+      currentEvents.on('input_request', inputHandler)
 
       // 连接到服务器
       // 6. 连接到 Binder 服务器 - 这是核心的服务器连接步骤
@@ -412,25 +421,6 @@ export function useThebe() {
         if (typeof kernel.sendInputReply === 'function') {
           kernel.sendInputReply({ value: inputValue })
         }
-        // // 构建input_reply消息
-        // const replyMsg = {
-        //   header: {
-        //     msg_id: kernel.createMessageId(),
-        //     msg_type: 'input_reply',
-        //     username: 'user',
-        //     session: kernel.sessionId,
-        //     date: new Date().toISOString(),
-        //     version: '5.3',
-        //   },
-        //   parent_header: {},
-        //   metadata: {},
-        //   content: {
-        //     value: inputValue,
-        //   },
-        // }
-
-        // // 发送消息到内核
-        // kernel.sendInputReply(replyMsg.content)
       }
 
       // 清理输入请求状态
@@ -468,12 +458,13 @@ export function useThebe() {
   async function disconnect() {
     console.log('Starting disconnect process, MODULE_ID:', MODULE_ID)
 
-    // 清理事件监听器 - 这是关键！
+    // 使用具体的回调函数引用移除监听器
     if (currentEvents) {
       try {
-        currentEvents.off('status')
-        currentEvents.off('error')
-        currentEvents.off('input_request')
+        if (statusHandler) currentEvents.off('status', statusHandler)
+        if (errorHandler) currentEvents.off('error', errorHandler)
+        if (inputHandler) currentEvents.off('input_request', inputHandler)
+        console.log('Event listeners properly removed')
       } catch (e) {
         console.warn('Error cleaning up events:', e)
       }
@@ -490,7 +481,8 @@ export function useThebe() {
 
     try {
       if (thebeServer) {
-        thebeServer.shutdownAllSessions()
+        console.log('thebeserver is cleaning......')
+        await thebeServer.shutdownAllSessions()
       }
     } catch (e) {
       console.warn('Error shutting down server:', e)
@@ -506,7 +498,6 @@ export function useThebe() {
     currentExecutingCell = null
 
     // 2.重置所有状态
-    state.isConnecting = false // 添加这一行
     state.isReady = false
     state.session = null // 添加这一行
     state.connectionStatus = 'idle'
