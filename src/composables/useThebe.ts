@@ -5,6 +5,8 @@ import type { Config, CoreOptions } from 'thebe-core'
 import type { IOutput } from '@jupyterlab/nbformat'
 
 import { ThebeServer, ThebeSession } from 'thebe-core'
+import { sendShutdownRequestOnUnload } from './useThebeLivecycle'
+import type { ISessionConnection } from '@jupyterlab/services/lib/session/session'
 import type { IRenderMimeRegistry, KernelOptions } from 'thebe-core'
 
 // ================= 【猴子补丁】 =================
@@ -30,6 +32,7 @@ ThebeServer.status = function (serverSettings: any) {
 const state = reactive({
   isConnecting: false,
   isReady: false,
+  session: null as ThebeSession | null, //存放当前的会话对象
   kernelStatus: 'idle',
   error: null as Error | null,
   //status有running，completed，error
@@ -54,6 +57,8 @@ let thebeSession: ThebeSession | null = null
 let thebeNotebook: ThebeNotebook | null = null
 let renderMimeRegistry: any = null
 let config: Config | null = null
+// 在文件顶部添加配置缓存
+let cachedServerSettings: any = null
 // 优化后的代码块管理
 const notebookCells = new Map<string, any>() // 缓存所有 cells
 // 跟踪当前执行的cell
@@ -111,6 +116,12 @@ export function useThebe() {
       // 作用：统一管理 Thebe 的所有配置选项，包括内核选项、Binder 选项等
       // 产生结果：一个包含完整配置信息的 Config 对象
       config = thebe.makeConfiguration(options || getDefaultOptions(), events)
+
+      // 缓存服务器设置，供页面卸载时使用
+      if (options?.serverSettings) {
+        cachedServerSettings = options.serverSettings
+        console.log('[init] Cached server settings:', cachedServerSettings)
+      }
 
       // 创建渲染器
       // 3. 创建 MIME 渲染注册表 - 负责将不同格式的输出渲染为可显示内容
@@ -184,6 +195,13 @@ export function useThebe() {
       // 产生结果：一个 ThebeSession 对象，可以用来执行 Python 代码
       // 运作机制：向 Jupyter 服务器发送创建内核的请求
       thebeSession = await thebeServer.startNewSession(renderMimeRegistry)
+      if (thebeSession) {
+        // 4. 将整个 thebeSession 对象存入 state
+        state.session = thebeSession
+      } else {
+        // 处理会话创建失败的情况
+        console.error('Failed to start Thebe session.')
+      }
 
       // 新增：为会话添加输入请求监听
       if (thebeSession && (thebeSession as any).kernel) {
@@ -469,7 +487,28 @@ export function useThebe() {
     await initializeKernel()
   }
 
+  // 页面卸载时的快速清理
+  function setupPageUnloadCleanup() {
+    const handlePageHide = () => {
+      // 确保 session 存在且类型正确
+      if (state.session && thebeSession) {
+        console.log('[pagehide] Starting cleanup process...')
+
+        sendShutdownRequestOnUnload(thebeSession)
+      }
+    }
+
+    // 使用 pagehide 事件而不是 beforeunload
+    window.addEventListener('pagehide', handlePageHide)
+
+    // 返回清理函数
+    return () => {
+      window.removeEventListener('pagehide', handlePageHide)
+    }
+  }
+
   // 默认配置选项
+
   function getDefaultOptions(): Partial<CoreOptions> {
     return {
       kernelOptions: {
@@ -498,6 +537,7 @@ export function useThebe() {
     executeCode,
     sendInputReply,
     disconnect,
+    setupPageUnloadCleanup,
     // 渲染输出的辅助方法
     renderOutput(output: IOutput) {
       // 处理不同类型的输出
