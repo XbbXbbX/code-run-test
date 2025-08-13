@@ -22,6 +22,16 @@ const router = createRouter({
       name: 'thebe-demo',
       component: () => import('../views/ThebeDemo.vue'),
     },
+    {
+      path: '/thebetest',
+      name: 'ThebeDemoOuter',
+      component: () => import('../views/ThebeDemoOuter.vue'),
+    },
+    {
+      path: '/testview',
+      name: 'TestView',
+      component: () => import('../views/TestView.vue'),
+    },
   ],
 })
 

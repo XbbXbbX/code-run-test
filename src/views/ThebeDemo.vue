@@ -148,6 +148,14 @@ const handleBeforeUnload = (event: any) => {
 }
 
 onMounted(() => {
+  console.log('=== ThebeDemo mounted ===')
+  console.log('state.isReady:', state.isReady)
+  console.log('state.isConnecting:', state.isConnecting)
+  console.log('state.kernelStatus:', state.kernelStatus)
+  if(state.isReady){
+    console.log('state is already ready')
+  }
+  console.log('Component is mounting, connecting Thebe session...')
   // 自动连接内核
   connectKernel()
   // 设置页面卸载时的清理

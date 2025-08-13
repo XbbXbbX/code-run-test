@@ -19,6 +19,7 @@ const originalStatus = ThebeServer.status
 // 覆盖 status 方法
 ThebeServer.status = function (serverSettings: any) {
   if (serverSettings.baseUrl?.includes('12346')) {
+    console.log('use my status 200')
     // 直接返回一个模拟的 Response 对象，ok 为 true
     // 这里要返回一个 Response 类型的对象，thebe-core 只用到了 ok 字段
     return Promise.resolve(new Response(null, { status: 200, statusText: 'OK' }))
@@ -27,6 +28,9 @@ ThebeServer.status = function (serverSettings: any) {
   return originalStatus.call(this, serverSettings)
 }
 // ================= 【猴子补丁 - 结束】 =================
+
+const MODULE_ID = Math.random().toString(36).slice(2)
+console.log('useThebe module loaded, ID:', MODULE_ID)
 
 // 状态管理
 const state = reactive({
@@ -59,6 +63,8 @@ let renderMimeRegistry: any = null
 let config: Config | null = null
 // 在文件顶部添加配置缓存
 let cachedServerSettings: any = null
+// 跟踪当前的事件系统
+let currentEvents: any = null
 // 优化后的代码块管理
 const notebookCells = new Map<string, any>() // 缓存所有 cells
 // 跟踪当前执行的cell
@@ -97,9 +103,13 @@ function handleInputRequest(data: {
 }
 
 export function useThebe() {
-  // 初始化并连接到Binder
+  // 初始化并连接到服务器
   async function initializeKernel(options?: Partial<CoreOptions>) {
-    if (state.isConnecting || state.isReady) return
+    if (state.isConnecting || state.isReady) {
+      if (state.isConnecting) console.log('state is connecting')
+      if (state.isReady) console.log('state is ready')
+      return
+    }
 
     state.isConnecting = true
     state.error = null
@@ -110,12 +120,12 @@ export function useThebe() {
       // 1. 创建事件系统 - 用于监听和处理 Thebe 内部的各种事件
       // 作用：提供发布-订阅模式，让不同组件之间可以通信
       // 运作时机：贯穿整个 Thebe 生命周期
-      const events = thebe.makeEvents()
+      currentEvents = thebe.makeEvents()
       // 2. 创建配置对象 - 合并用户配置和默认配置，并绑定事件系统
       // 参数：options（用户自定义配置）|| getDefaultOptions()（默认配置）, events（事件系统）
       // 作用：统一管理 Thebe 的所有配置选项，包括内核选项、Binder 选项等
       // 产生结果：一个包含完整配置信息的 Config 对象
-      config = thebe.makeConfiguration(options || getDefaultOptions(), events)
+      config = thebe.makeConfiguration(options || getDefaultOptions(), currentEvents)
 
       // 缓存服务器设置，供页面卸载时使用
       if (options?.serverSettings) {
@@ -135,10 +145,13 @@ export function useThebe() {
       // 4. 设置状态事件监听器 - 监听服务器和内核的状态变化
       // 运作时机：服务器启动、内核启动、会话创建等各个阶段
       // 作用：实时更新 UI 状态，让用户知道当前连接状态
-      events.on('status' as any, (event: string, data: any) => {
+      currentEvents.on('status' as any, (event: string, data: any) => {
         console.log('Server status:', event, data)
+        console.log('Current MODULE_ID:', MODULE_ID) // 确认是哪个模块实例触发的
         state.kernelStatus = data.status || event
         if (data.status === 'ready' || data.status === 'server-ready') {
+          console.log('Setting state.isReady to true from event:', event, data)
+          console.trace() // 打印调用堆栈
           state.isReady = true
           state.isConnecting = false
         }
@@ -146,14 +159,14 @@ export function useThebe() {
       // 设置错误事件监听器 - 处理连接或执行过程中的错误
       // 运作时机：任何阶段出现错误时触发
       // 作用：捕获并显示错误信息，更新错误状态
-      events.on('error' as any, (event: string, data: any) => {
+      currentEvents.on('error' as any, (event: string, data: any) => {
         console.error('Thebe error:', event, data)
         state.error = new Error(data.message || 'Unknown error')
         state.isConnecting = false
       })
 
       // 新增：监听输入请求事件
-      events.on('input_request' as any, (data: any) => {
+      currentEvents.on('input_request' as any, (data: any) => {
         console.log('Input request received:', data)
         handleInputRequest(data)
       })
@@ -452,10 +465,24 @@ export function useThebe() {
   }
 
   // 断开连接
-  function disconnect() {
+  async function disconnect() {
+    console.log('Starting disconnect process, MODULE_ID:', MODULE_ID)
+
+    // 清理事件监听器 - 这是关键！
+    if (currentEvents) {
+      try {
+        currentEvents.off('status')
+        currentEvents.off('error')
+        currentEvents.off('input_request')
+      } catch (e) {
+        console.warn('Error cleaning up events:', e)
+      }
+      currentEvents = null
+    }
+
     try {
       if (thebeSession) {
-        thebeSession.shutdown()
+        await thebeSession.shutdown()
       }
     } catch (e) {
       console.warn('Error shutting down session:', e)
@@ -469,14 +496,28 @@ export function useThebe() {
       console.warn('Error shutting down server:', e)
     }
 
-    // 重置所有状态
+    // 1. 重置模块级全局变量
     thebeSession = null
     thebeServer = null
     thebeNotebook = null
+    renderMimeRegistry = null
+    config = null
+    cachedServerSettings = null
+    currentExecutingCell = null
+
+    // 2.重置所有状态
+    state.isConnecting = false // 添加这一行
     state.isReady = false
+    state.session = null // 添加这一行
     state.connectionStatus = 'idle'
     state.kernelStatus = 'idle'
+    state.error = null // 添加这一行
+
+    // 3.清理所有 Map 数据结构
     state.cellExecutions.clear()
+    state.inputRequests.clear()
+    notebookCells.clear()
+    console.log('Current state.isReady:', state.isReady) // 添加调试日志
   }
 
   // 手动重连功能
@@ -524,10 +565,10 @@ export function useThebe() {
   }
 
   // 自动清理
-  onUnmounted(() => {
-    console.log('Conposables useThebe is unmounting, disconnecting Thebe session...')
-    disconnect()
-  })
+  // onUnmounted(() => {
+  //   console.log('Conposables useThebe is unmounting, disconnecting Thebe session...')
+  //   disconnect()
+  // })
 
   return {
     // 只读状态
