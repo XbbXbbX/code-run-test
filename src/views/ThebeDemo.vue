@@ -51,13 +51,13 @@ function connectKernel() {
     //   repoProvider: 'github',
     // },
     serverSettings: {
-      baseUrl: 'http://106.15.43.196:12346', // Gateway URL
+      baseUrl: 'http://106.15.43.196:80', // Gateway URL
       token: '112233', // Gateway 令牌
       appendToken: false,
       // wsUrl: 'ws://your-jupyter-gateway-url:8888', // 可选: 如果 WebSocket URL 不同，可显式定义
     },
     savedSessionOptions: {
-      enabled: false,
+      enabled: true,
     },
   })
 }
@@ -152,13 +152,13 @@ onMounted(() => {
   console.log('state.isReady:', state.isReady)
   console.log('state.isConnecting:', state.isConnecting)
   console.log('state.kernelStatus:', state.kernelStatus)
-  if(state.isReady){
+  if (state.isReady) {
     console.log('state is already ready')
   }
   console.log('Component is mounting, connecting Thebe session...')
   // 自动连接内核
   connectKernel()
-  // 设置页面卸载时的清理
+  // 设置页面强制卸载时的清理
   cleanupPageUnload = setupPageUnloadCleanup()
 })
 
