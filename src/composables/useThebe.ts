@@ -5,9 +5,9 @@ import type { Config, CoreOptions } from 'thebe-core'
 import type { IOutput } from '@jupyterlab/nbformat'
 
 import { ThebeServer, ThebeSession } from 'thebe-core'
+import { SessionManager } from '@jupyterlab/services/lib/session/manager'
+import { KernelManager } from '@jupyterlab/services/lib/kernel/manager'
 import { sendShutdownRequestOnUnload } from './useThebeLivecycle'
-import type { ISessionConnection } from '@jupyterlab/services/lib/session/session'
-import type { IRenderMimeRegistry, KernelOptions } from 'thebe-core'
 
 // ================= 【猴子补丁】 =================
 //
@@ -18,7 +18,8 @@ const originalStatus = ThebeServer.status
 
 // 覆盖 status 方法
 ThebeServer.status = function (serverSettings: any) {
-  if (serverSettings.baseUrl?.includes('12346')) {
+  console.log('im in api/status!!!!!!')
+  if (serverSettings.baseUrl?.includes('106.15.43.196')) {
     console.log('use my status 200')
     // 直接返回一个模拟的 Response 对象，ok 为 true
     // 这里要返回一个 Response 类型的对象，thebe-core 只用到了 ok 字段
@@ -27,10 +28,95 @@ ThebeServer.status = function (serverSettings: any) {
   // 否则走原始逻辑
   return originalStatus.call(this, serverSettings)
 }
-// ================= 【猴子补丁 - 结束】 =================
+// ================= 【补丁 2：修改原型】 =================
+//
+// 原理：在创建任何 ThebeServer 实例之前，直接修改 SessionManager 和
+//       KernelManager 的原型。这样所有后续创建的实例都会继承
+//       这个被覆盖的方法，从根本上阻止轮询请求。
+//       这个代码块必须放在模块的顶层，以确保在任何实例化之前执行。
+
+console.log('[useThebe] Patching prototypes to disable polling at module load time...')
+;(SessionManager.prototype as any).requestRunning = async function () {
+  console.log(
+    '[useThebe] Intercepted SessionManager.requestRunning via prototype patch. No request sent.',
+  )
+  // @ts-ignore
+  if (this._pollModels && this._pollModels.isDisposed === false) {
+    // @ts-ignore
+    this._pollModels.stop() // 确保轮询器被停止
+  }
+  return Promise.resolve() // 明确返回一个成功的Promise
+}
+;(KernelManager.prototype as any).requestRunning = async function () {
+  console.log(
+    '[useThebe] Intercepted KernelManager.requestRunning via prototype patch. No request sent.',
+  )
+  // @ts-ignore
+  if (this._pollModels && this._pollModels.isDisposed === false) {
+    // @ts-ignore
+    this._pollModels.stop() // 确保轮询器被停止
+  }
+  return Promise.resolve()
+}
+// ================= 【补丁结束】 =================
+
+import type { KernelOptions } from 'thebe-core'
+import { IRenderMimeRegistry } from '@jupyterlab/rendermime'
+
+/**
+ * 创建一个新的会话并连接到一个已存在的 Kernel。
+ * @param thebeServer - 已初始化的 ThebeServer 实例。
+ * @param rendermime - IRenderMimeRegistry 实例。
+ * @param kernelId - 要连接的已存在的 Kernel 的 ID。
+ * @returns 返回一个 Promise，解析为 ThebeSession 或 null。
+ */
+export async function startSessionWithExistingKernel(
+  thebeServer: ThebeServer,
+  rendermime: IRenderMimeRegistry,
+  kernelId: string,
+): Promise<ThebeSession | null> {
+  // 1. 等待 server 和 sessionManager 准备就绪
+  //    注意：这里所有的 'this' 都被替换为传入的 'thebeServer' 实例
+  await thebeServer.ready
+
+  if (!thebeServer.sessionManager) {
+    throw Error('Requesting session from a server, with no SessionManager available')
+  }
+
+  await thebeServer.sessionManager.ready
+
+  // 2. 为新的 Session 定义元数据 (path, name)
+  //    由于 Kernel 已经存在，这里的 path 和 name 不那么重要，但 API 要求提供。
+  //    我们使用一个基于 Kernel ID 的唯一名称。
+  const path = `thebe-session-for-${kernelId}.ipynb`
+  const name = path
+
+  console.debug('thebe:api:startNewSession server1111111111', thebeServer)
+  console.debug(`thebe:api:startSessionWithExistingKernel`, { name, path, kernelId })
+
+  // 3. 【核心修改】调用 startNew，但传入 kernel.id 而不是 kernel.name
+  const connection = await thebeServer.sessionManager.startNew({
+    name,
+    path,
+    type: 'notebook',
+    kernel: {
+      id: kernelId, // <-- 使用传入的 kernelId
+      // 注意：这里绝对不能再有 'name' 字段！
+    } as any,
+  })
+
+  if (!connection) {
+    console.debug('no conenction')
+    return null
+  }
+  console.debug('thebe:api:startnew', connection)
+
+  // 4. 使用与原始函数完全相同的方式创建并返回 ThebeSession 实例
+  return new ThebeSession(thebeServer, connection, rendermime)
+}
 
 const MODULE_ID = Math.random().toString(36).slice(2)
-console.log('useThebe module loaded, ID:', MODULE_ID)
+// console.log('useThebe module loaded, ID:', MODULE_ID)
 
 // 状态管理
 const state = reactive({
@@ -85,7 +171,7 @@ function handleInputRequest(data: {
   password: boolean
   msgId?: string
 }) {
-  console.log('Handling input request for cell:', data.cellId)
+  // console.log('Handling input request for cell:', data.cellId)
 
   // 更新cell状态为等待输入
   const execution = state.cellExecutions.get(data.cellId)
@@ -120,6 +206,7 @@ export function useThebe() {
     state.kernelStatus = 'starting'
 
     try {
+      console.log('initialization started')
       // 创建配置
       // 1. 创建事件系统 - 用于监听和处理 Thebe 内部的各种事件
       // 作用：提供发布-订阅模式，让不同组件之间可以通信
@@ -134,7 +221,7 @@ export function useThebe() {
       // 缓存服务器设置，供页面卸载时使用
       if (options?.serverSettings) {
         cachedServerSettings = options.serverSettings
-        console.log('[init] Cached server settings:', cachedServerSettings)
+        // console.log('[init] Cached server settings:', cachedServerSettings)
       }
 
       // 创建渲染器
@@ -151,11 +238,11 @@ export function useThebe() {
       // 作用：实时更新 UI 状态，让用户知道当前连接状态
       // 创建具名回调函数
       statusHandler = (event: string, data: any) => {
-        console.log('Server status:', event, data)
-        console.log('Current MODULE_ID:', MODULE_ID)
+        // console.log('Server status:', event, data)
+        // console.log('Current MODULE_ID:', MODULE_ID)
         state.kernelStatus = data.status || event
         if (data.status === 'ready' || data.status === 'server-ready') {
-          console.log('Setting state.isReady to true from event:', event, data)
+          // console.log('Setting state.isReady to true from event:', event, data)
           state.isReady = true
           state.isConnecting = false
         }
@@ -164,14 +251,14 @@ export function useThebe() {
       // 运作时机：任何阶段出现错误时触发
       // 作用：捕获并显示错误信息，更新错误状态
       errorHandler = (event: string, data: any) => {
-        console.error('Thebe error:', event, data)
+        // console.error('Thebe error:', event, data)
         state.error = new Error(data.message || 'Unknown error')
         state.isConnecting = false
       }
 
-      // 新增：监听输入请求事件
+      // 监听输入请求事件
       inputHandler = (data: any) => {
-        console.log('Input request received:', data)
+        // console.log('Input request received:', data)
         handleInputRequest(data)
       }
 
@@ -217,9 +304,19 @@ export function useThebe() {
       // 产生结果：一个 ThebeSession 对象，可以用来执行 Python 代码
       // 运作机制：向 Jupyter 服务器发送创建内核的请求
       thebeSession = await thebeServer.startNewSession(renderMimeRegistry)
+
+      // // 假设 thebeServer 和 rendermime 已经准备好
+      // const myExistingKernelId = '266d3705-9517-4809-af51-0e5ce8fb7925'
+      // thebeSession = await startSessionWithExistingKernel(
+      //   thebeServer, // 传入 ThebeServer 实例
+      //   renderMimeRegistry, // 传入 rendermime 实例
+      //   myExistingKernelId, // 传入你想要连接的 Kernel ID
+      // )
+      console.debug('try to new a thebesession:', thebeSession)
       if (thebeSession) {
         // 4. 将整个 thebeSession 对象存入 state
         state.session = thebeSession
+        console.debug('new session ready:', thebeSession)
       } else {
         // 处理会话创建失败的情况
         console.error('Failed to start Thebe session.')
@@ -233,7 +330,7 @@ export function useThebe() {
         kernel.anyMessage.connect((sender: any, args: any) => {
           const { msg } = args
           if (msg.header.msg_type === 'input_request') {
-            console.log('Kernel input request:', msg)
+            // console.log('Kernel input request:', msg)
             handleInputRequest({
               cellId: getCurrentExecutingCell(),
               prompt: msg.content.prompt || '请输入:',
@@ -249,7 +346,7 @@ export function useThebe() {
       state.isConnecting = false
       state.kernelStatus = 'ready'
     } catch (err) {
-      console.error('Failed to initialize Thebe kernel:', err)
+      // console.error('Failed to initialize Thebe kernel:', err)
       state.error = err as Error
       state.isConnecting = false
       state.kernelStatus = 'error'
@@ -382,7 +479,7 @@ export function useThebe() {
       // 返回执行结果 - 供调用组件使用
       return { output: cell.outputs || [] }
     } catch (error) {
-      console.error('Execution error:', error)
+      // console.error('Execution error:', error)
       const execution = state.cellExecutions.get(cellId)
       // 新增：检查是否是连接相关错误
       if (isConnectionError(error as Error)) {
@@ -403,13 +500,13 @@ export function useThebe() {
     }
   }
 
-  // 新增：发送用户输入到内核
+  // 发送用户输入到内核
   async function sendInputReply(cellId: string, inputValue: string) {
-    console.log('Sending input reply for cell:', cellId, 'value:', inputValue)
+    // console.log('Sending input reply for cell:', cellId, 'value:', inputValue)
 
     const inputRequest = state.inputRequests.get(cellId)
     if (!inputRequest) {
-      console.error('No input request found for cell:', cellId)
+      // console.error('No input request found for cell:', cellId)
       return
     }
 
@@ -436,7 +533,7 @@ export function useThebe() {
       // 解析Promise
       inputRequest.resolve(inputValue)
     } catch (error) {
-      console.error('Error sending input reply:', error)
+      // console.error('Error sending input reply:', error)
 
       // 清理状态
       state.inputRequests.delete(cellId)
@@ -456,7 +553,7 @@ export function useThebe() {
 
   // 断开连接
   async function disconnect() {
-    console.log('Starting disconnect process, MODULE_ID:', MODULE_ID)
+    // console.log('Starting disconnect process, MODULE_ID:', MODULE_ID)
 
     // 使用具体的回调函数引用移除监听器
     if (currentEvents) {
@@ -488,6 +585,17 @@ export function useThebe() {
       console.warn('Error shutting down server:', e)
     }
 
+    // 2. 调用顶层的 dispose 方法，让 ThebeServer 自己处理所有内部资源的清理
+    // if (thebeServer) {
+    //   try {
+    //     console.log('thebeserver is disposing...')
+    //     thebeServer.dispose() // 使用 dispose() 代替 shutdownAllSessions()
+    //     console.log('thebeserver disposed.')
+    //   } catch (e) {
+    //     console.warn('Error disposing server:', e)
+    //   }
+    // }
+
     // 1. 重置模块级全局变量
     thebeSession = null
     thebeServer = null
@@ -499,16 +607,19 @@ export function useThebe() {
 
     // 2.重置所有状态
     state.isReady = false
-    state.session = null // 添加这一行
-    state.connectionStatus = 'idle'
-    state.kernelStatus = 'idle'
+    state.isConnecting = false
+    state.session = null
+    // state.connectionStatus = 'idle'
+    // state.kernelStatus = 'idle'
+    state.connectionStatus = 'disconnected'
+    state.kernelStatus = 'disconnected'
     state.error = null // 添加这一行
 
     // 3.清理所有 Map 数据结构
     state.cellExecutions.clear()
     state.inputRequests.clear()
     notebookCells.clear()
-    console.log('Current state.isReady:', state.isReady) // 添加调试日志
+    // console.log('Current state.isReady:', state.isReady) // 添加调试日志
   }
 
   // 手动重连功能
@@ -554,12 +665,6 @@ export function useThebe() {
       },
     }
   }
-
-  // 自动清理
-  // onUnmounted(() => {
-  //   console.log('Conposables useThebe is unmounting, disconnecting Thebe session...')
-  //   disconnect()
-  // })
 
   return {
     // 只读状态
