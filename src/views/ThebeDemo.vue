@@ -30,15 +30,42 @@
 import { onMounted, onUnmounted } from 'vue'
 import { useThebe } from '../composables/useThebe'
 import ExecutableCode from '../components/ExecutableCode.vue'
-
+import type { Session } from '@jupyterlab/services'
 const { state, initializeKernel, disconnect, setupPageUnloadCleanup } = useThebe()
 
 let cleanupPageUnload: (() => void) | null = null
+//标准session格式是这样的：
+// {
+//   "id": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+//   "path": "string",
+//   "name": "string",
+//   "type": "string",
+//   "kernel": {
+//     "id": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+//     "name": "string",
+//     "last_activity": "string",
+//     "connections": 0,
+//     "execution_state": "string"
+//   }
+// }
 
 // 连接到内核
 function connectKernel() {
   const uniqueSuffix = Date.now().toString(36) + Math.random().toString(36).substring(2)
-  initializeKernel({
+  const sessionModel: Session.IModel = {
+    id: '4d5de48b-8b4d-45ab-a927-2b0800c864d0',
+    path: 'mejs4hva29bo9bj14rl66',
+    name: '',
+    type: 'notebook',
+    kernel: {
+      id: '72eb6f0c-ff58-44e9-9823-fa1a83e2d9a9',
+      name: 'python3',
+      last_activity: '2025-08-20T15:29:24.511193Z',
+      execution_state: 'starting',
+      connections: 0,
+    },
+  }
+  initializeKernel(sessionModel, {
     kernelOptions: {
       kernelName: 'python3',
       path: uniqueSuffix,

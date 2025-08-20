@@ -1,0 +1,11 @@
+POST http://106.15.43.196:80/api/sessions
+Content-Type: application/json
+
+{
+  "name": "thebe.ipynb",
+  "path": "mejs4hva29bo9bj14rl",
+  "type": "notebook",
+  "kernel": {
+    "name": "python3"
+  }
+}

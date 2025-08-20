@@ -8,6 +8,7 @@ import { ThebeServer, ThebeSession } from 'thebe-core'
 import { SessionManager } from '@jupyterlab/services/lib/session/manager'
 import { KernelManager } from '@jupyterlab/services/lib/kernel/manager'
 import { sendShutdownRequestOnUnload } from './useThebeLivecycle'
+import type { Session } from '@jupyterlab/services'
 
 // ================= 【猴子补丁】 =================
 //
@@ -194,7 +195,8 @@ function handleInputRequest(data: {
 
 export function useThebe() {
   // 初始化并连接到服务器
-  async function initializeKernel(options?: Partial<CoreOptions>) {
+  async function initializeKernel(sessionModel: Session.IModel, options?: Partial<CoreOptions>) {
+    // async function initializeKernel(options?: Partial<CoreOptions>) {
     if (state.isConnecting || state.isReady) {
       if (state.isConnecting) console.log('state is connecting')
       if (state.isReady) console.log('state is ready')
@@ -292,9 +294,7 @@ export function useThebe() {
       // // 注意：这里需要根据你的配置决定调用哪个连接函数
       // // 假设你总是连接到已知的 Jupyter Server
       thebeServer.connectToJupyterServer()
-
-      // // 【新增】等待服务器完全准备就绪
-      // // 这是至关重要的一步，确保在进行下一步操作前连接已经建立
+      // // 等待服务器完全准备就绪
       await thebeServer.ready
 
       // 创建会话 - 需要传入 rendermime
@@ -303,7 +303,9 @@ export function useThebe() {
       // 作用：创建一个可以执行代码的会话环境
       // 产生结果：一个 ThebeSession 对象，可以用来执行 Python 代码
       // 运作机制：向 Jupyter 服务器发送创建内核的请求
-      thebeSession = await thebeServer.startNewSession(renderMimeRegistry)
+      console.log(`Attempting to connect to existing session: ${sessionModel.id}`)
+      thebeSession = await thebeServer.connectToExistingSession(sessionModel, renderMimeRegistry)
+      // thebeSession = await thebeServer.startNewSession(renderMimeRegistry)
 
       // // 假设 thebeServer 和 rendermime 已经准备好
       // const myExistingKernelId = '266d3705-9517-4809-af51-0e5ce8fb7925'
@@ -623,12 +625,12 @@ export function useThebe() {
   }
 
   // 手动重连功能
-  async function reconnect() {
-    // 清理现有连接
-    disconnect()
-    // 重新初始化
-    await initializeKernel()
-  }
+  // async function reconnect() {
+  //   // 清理现有连接
+  //   disconnect()
+  //   // 重新初始化
+  //   await initializeKernel()
+  // }
 
   // 页面卸载时的快速清理
   function setupPageUnloadCleanup() {
